@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地形区域查看器</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        .legend {
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            line-height: 24px;
+            color: #333;
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
+        .info-panel {
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            max-width: 250px;
+        }
+        .controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="controls">
+        <h4>区域控制</h4>
+        <div>
+            <input type="checkbox" id="showPlain" checked>
+            <label for="showPlain">显示平原</label>
+        </div>
+        <div>
+            <input type="checkbox" id="showMountain" checked>
+            <label for="showMountain">显示山地</label>
+        </div>
+        <div>
+            <input type="checkbox" id="showLowland" checked>
+            <label for="showLowland">显示低洼地</label>
+        </div>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        // 初始化地图
+        const map = L.map('map').setView([0, 0], 10);
+        
+        // 添加底图
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        
+        // 定义地形类型的颜色
+        const terrainColors = {
+            'PLAIN': '#8BC34A',  // 平原 - 绿色
+            'MOUNTAIN': '#795548', // 山地 - 棕色
+            'LOWLAND': '#2196F3'   // 低洼地 - 蓝色
+        };
+        
+        // 信息面板
+        const infoPanel = L.control({position: 'topleft'});
+        infoPanel.onAdd = function(map) {
+            this._div = L.DomUtil.create('div', 'info-panel');
+            this.update();
+            return this._div;
+        };
+        infoPanel.update = function(props) {
+            this._div.innerHTML = '<h4>地形区域信息</h4>' + (props ? 
+                '<b>类型:</b> ' + props.name + '<br>' +
+                '<b>面积:</b> ' + props.area.toFixed(2) + ' 平方单位<br>'
+                : '点击区域查看详细信息');
+        };
+        infoPanel.addTo(map);
+        
+        // 存储图层组
+        const terrainLayers = {
+            'PLAIN': new L.LayerGroup(),
+            'MOUNTAIN': new L.LayerGroup(),
+            'LOWLAND': new L.LayerGroup()
+        };
+        
+        // 添加图层到地图
+        Object.values(terrainLayers).forEach(layer => map.addLayer(layer));
+        
+        // 控制图层显示
+        document.getElementById('showPlain').addEventListener('change', function() {
+            this.checked ? map.addLayer(terrainLayers.PLAIN) : map.removeLayer(terrainLayers.PLAIN);
+        });
+        
+        document.getElementById('showMountain').addEventListener('change', function() {
+            this.checked ? map.addLayer(terrainLayers.MOUNTAIN) : map.removeLayer(terrainLayers.MOUNTAIN);
+        });
+        
+        document.getElementById('showLowland').addEventListener('change', function() {
+            this.checked ? map.addLayer(terrainLayers.LOWLAND) : map.removeLayer(terrainLayers.LOWLAND);
+        });
+        
+        // 加载GeoJSON数据
+        fetch('/api/terrain/geojson')
+            .then(response => response.json())
+            .then(data => {
+                data.features.forEach(feature => {
+                    const terrainType = feature.properties.type;
+                    
+                    // 创建地形区域图层
+                    const layer = L.geoJSON(feature, {
+                        style: {
+                            fillColor: terrainColors[terrainType] || '#CCCCCC',
+                            weight: 2,
+                            opacity: 1,
+                            color: '#FFF',
+                            fillOpacity: 0.7
+                        }
+                    });
+                    
+                    // 添加交互
+                    layer.on({
+                        mouseover: function(e) {
+                            const layer = e.target;
+                            layer.setStyle({
+                                weight: 3,
+                                color: '#666',
+                                fillOpacity: 0.9
+                            });
+                            layer.bringToFront();
+                            infoPanel.update(feature.properties);
+                        },
+                        mouseout: function(e) {
+                            layer.setStyle({
+                                weight: 2,
+                                color: '#FFF',
+                                fillOpacity: 0.7
+                            });
+                            infoPanel.update();
+                        },
+                        click: function(e) {
+                            map.fitBounds(e.target.getBounds());
+                            
+                            // 显示详细信息
+                            L.popup()
+                                .setLatLng(e.latlng)
+                                .setContent(
+                                    `<h4>${feature.properties.name} 区域</h4>` +
+                                    `<p>面积: ${feature.properties.area.toFixed(2)} 平方单位</p>`
+                                )
+                                .openOn(map);
+                        }
+                    });
+                    
+                    // 添加到对应的图层组
+                    if (terrainLayers[terrainType]) {
+                        terrainLayers[terrainType].addLayer(layer);
+                    }
+                });
+                
+                // 获取所有区域的边界
+                const allLayers = L.layerGroup([
+                    terrainLayers.PLAIN,
+                    terrainLayers.MOUNTAIN,
+                    terrainLayers.LOWLAND
+                ]);
+                
+                // 缩放到所有区域的范围
+                const bounds = allLayers.getBounds();
+                if (bounds.isValid()) {
+                    map.fitBounds(bounds);
+                }
+                
+                // 添加图例
+                const legend = L.control({position: 'bottomright'});
+                legend.onAdd = function(map) {
+                    const div = L.DomUtil.create('div', 'legend');
+                    div.innerHTML += '<h4>地形类型</h4>';
+                    div.innerHTML += '<i style="background: ' + terrainColors.PLAIN + '"></i> 平原<br>';
+                    div.innerHTML += '<i style="background: ' + terrainColors.MOUNTAIN + '"></i> 山地<br>';
+                    div.innerHTML += '<i style="background: ' + terrainColors.LOWLAND + '"></i> 低洼地<br>';
+                    return div;
+                };
+                legend.addTo(map);
+            })
+            .catch(error => console.error('加载GeoJSON数据失败:', error));
+    </script>
+</body>
+</html>
