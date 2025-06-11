@@ -2,14 +2,15 @@ package com.gis.gdal;
 
 import org.gdal.gdal.*;
 import org.gdal.gdalconst.gdalconstConstants;
-import org.gdal.ogr.Feature;
-import org.gdal.ogr.Geometry;
-import org.gdal.ogr.Layer;
+import org.gdal.ogr.*;
+import org.gdal.ogr.Driver;
 import org.gdal.osr.SpatialReference;
 
 import java.io.File;
 import java.sql.*;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Vector;
 
 /**
@@ -20,6 +21,9 @@ public class GdalDatasetUtil {
     static {
         // 确保 GDAL 在使用前已初始化
         gdal.AllRegister();
+        ogr.RegisterAll();
+        gdal.SetConfigOption("OGR_GEOMETRY_WKT_FORMATTER", "AXIS_AUTHORITY");
+        gdal.SetConfigOption("OGR_GEOJSON_MAX_OBJ_SIZE", "500");
     }
 
     /**
@@ -576,6 +580,328 @@ public class GdalDatasetUtil {
     }
 
     /**
+     * 读取 GeoJSON 文件，添加新字段并保存
+     *
+     * @param geoJsonPath GeoJSON 文件路径
+     * @param newFieldName 新字段名称
+     * @param newFieldValue 新字段默认值
+     * @return 是否成功
+     */
+    public static boolean addFieldToGeoJSON(String geoJsonPath, String newFieldName, String newFieldValue) {
+        try {
+            // 打开现有的 GeoJSON 文件
+            DataSource dataSource = ogr.Open(geoJsonPath, 1); // 1 表示可写入模式
+            if (dataSource == null) {
+                System.err.println("无法打开 GeoJSON 文件: " + geoJsonPath);
+                return false;
+            }
+
+            Layer layer = dataSource.GetLayer(0);
+
+            // 创建新字段
+            FieldDefn newField = new FieldDefn(newFieldName, ogr.OFTString);
+            newField.SetWidth(50);
+
+            // 将新字段添加到图层
+            if (layer.CreateField(newField) != 0) {
+                System.err.println("创建字段失败: " + newFieldName);
+                dataSource.delete();
+                return false;
+            }
+
+            // 遍历所有要素并设置新字段的值
+            layer.ResetReading();
+            Feature feature;
+            while ((feature = layer.GetNextFeature()) != null) {
+                // 可以根据需要设置不同的值，这里示例设置一些默认值
+                feature.SetField(newFieldName, newFieldValue);
+                // 更新要素
+                layer.SetFeature(feature);
+
+                // 释放要素
+                feature.delete();
+            }
+
+            // 同步更改并释放资源
+            dataSource.SyncToDisk();
+            dataSource.delete();
+
+            System.out.println("已成功添加字段: " + newFieldName);
+            return true;
+
+        } catch (Exception e) {
+            System.err.println("添加字段时出错: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * 根据 name 字段的值将 GeoJSON 文件拆分成多个文件
+     *
+     * @param sourceGeoJson 源 GeoJSON 文件路径
+     * @param outputFolder  输出文件夹路径
+     * @param fieldName     用于拆分的字段名称（例如 "name"）
+     * @return 是否成功
+     */
+    public static boolean splitGeoJsonByField(String sourceGeoJson, String outputFolder, String fieldName) {
+        try {
+            // 注册所有驱动
+            ogr.RegisterAll();
+
+            // 打开源文件
+            DataSource sourceDs = ogr.Open(sourceGeoJson, 0); // 0表示只读模式
+            if (sourceDs == null) {
+                System.err.println("无法打开源文件: " + sourceGeoJson);
+                return false;
+            }
+
+            // 获取图层
+            Layer sourceLayer = sourceDs.GetLayer(0);
+            if (sourceLayer == null) {
+                System.err.println("无法获取源文件图层");
+                sourceDs.delete();
+                return false;
+            }
+
+            // 获取字段索引
+            FeatureDefn featureDefn = sourceLayer.GetLayerDefn();
+            int fieldIndex = featureDefn.GetFieldIndex(fieldName);
+            if (fieldIndex == -1) {
+                System.err.println("字段 '" + fieldName + "' 不存在于源文件中");
+                sourceDs.delete();
+                return false;
+            }
+
+            // 收集所有唯一的字段值
+            Set<String> uniqueValues = new HashSet<>();
+            sourceLayer.ResetReading();
+            Feature feature;
+            while ((feature = sourceLayer.GetNextFeature()) != null) {
+                String value = feature.GetFieldAsString(fieldIndex);
+                uniqueValues.add(value);
+                feature.delete();
+            }
+
+            // 为每个唯一值创建一个新的 GeoJSON 文件
+            for (String value : uniqueValues) {
+                String outputFile = outputFolder + File.separator + "split_" + fieldName + "_" + value + ".geojson";
+
+                // 创建输出驱动和数据源
+                Driver driver = ogr.GetDriverByName("GeoJSON");
+                DataSource outputDs = driver.CreateDataSource(outputFile);
+                if (outputDs == null) {
+                    System.err.println("无法创建输出文件: " + outputFile);
+                    continue;
+                }
+
+                // 复制图层结构
+                Layer outputLayer = outputDs.CreateLayer(
+                        "split_" + value,
+                        sourceLayer.GetSpatialRef(),
+                        sourceLayer.GetGeomType(),
+                        new Vector<>()
+                );
+
+                // 复制字段定义
+                for (int i = 0; i < featureDefn.GetFieldCount(); i++) {
+                    outputLayer.CreateField(featureDefn.GetFieldDefn(i));
+                }
+
+                // 筛选并复制要素
+                sourceLayer.ResetReading();
+                while ((feature = sourceLayer.GetNextFeature()) != null) {
+                    String featureValue = feature.GetFieldAsString(fieldIndex);
+
+                    if (featureValue.equals(value)) {
+                        // 创建新要素并复制几何和属性
+                        Feature newFeature = new Feature(outputLayer.GetLayerDefn());
+                        newFeature.SetGeometry(feature.GetGeometryRef());
+
+                        // 复制所有字段值
+                        for (int i = 0; i < featureDefn.GetFieldCount(); i++) {
+                            newFeature.SetField(i, feature.GetFieldAsString(i));
+                        }
+
+                        // 添加到输出图层
+                        outputLayer.CreateFeature(newFeature);
+                        newFeature.delete();
+                    }
+
+                    feature.delete();
+                }
+
+                // 释放资源
+                outputDs.SyncToDisk();
+                outputDs.delete();
+                System.out.println("已创建拆分文件: " + outputFile);
+            }
+
+            // 释放源数据源
+            sourceDs.delete();
+            return true;
+
+        } catch (Exception e) {
+            System.err.println("拆分 GeoJSON 时出错: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * 根据 name 字段的值将 GeoJSON 文件拆分成多个文件，排除name字段
+     *
+     * @param sourceGeoJson 源 GeoJSON 文件路径
+     * @param outputFolder  输出文件夹路径
+     * @param fieldName     用于拆分的字段名称（例如 "name"）
+     * @return 是否成功
+     */
+    public static boolean splitGeoJsonByFieldWithoutName(String sourceGeoJson, String outputFolder, String city,String fieldName) {
+        try {
+            // 注册所有驱动
+            ogr.RegisterAll();
+
+            // 打开源文件
+            DataSource sourceDs = ogr.Open(sourceGeoJson, 0); // 0表示只读模式
+            if (sourceDs == null) {
+                System.err.println("无法打开源文件: " + sourceGeoJson);
+                return false;
+            }
+
+            // 获取图层
+            Layer sourceLayer = sourceDs.GetLayer(0);
+            if (sourceLayer == null) {
+                System.err.println("无法获取源文件图层");
+                sourceDs.delete();
+                return false;
+            }
+
+            // 获取字段索引
+            FeatureDefn featureDefn = sourceLayer.GetLayerDefn();
+            int fieldIndex = featureDefn.GetFieldIndex(fieldName);
+            if (fieldIndex == -1) {
+                System.err.println("字段 '" + fieldName + "' 不存在于源文件中");
+                sourceDs.delete();
+                return false;
+            }
+
+            // 收集所有唯一的字段值
+            Set<String> uniqueValues = new HashSet<>();
+            sourceLayer.ResetReading();
+            Feature feature;
+            while ((feature = sourceLayer.GetNextFeature()) != null) {
+                String value = feature.GetFieldAsString(fieldIndex);
+                uniqueValues.add(value);
+                feature.delete();
+            }
+
+            // 为每个唯一值创建一个新的 GeoJSON 文件
+            for (String value : uniqueValues) {
+                String outputFile = outputFolder + value + File.separator + city + "_" + value + ".json";
+
+                // 创建输出驱动和数据源
+                Driver driver = ogr.GetDriverByName("GeoJSON");
+                DataSource outputDs = driver.CreateDataSource(outputFile);
+                if (outputDs == null) {
+                    System.err.println("无法创建输出文件: " + outputFile);
+                    continue;
+                }
+
+                // 复制图层结构，但排除name字段
+                Layer outputLayer = outputDs.CreateLayer(
+                        "split_" + value,
+                        sourceLayer.GetSpatialRef(),
+                        sourceLayer.GetGeomType(),
+                        new Vector<>()
+                );
+
+                // 复制除name字段外的所有字段定义
+                for (int i = 0; i < featureDefn.GetFieldCount(); i++) {
+                    FieldDefn fieldDefn = featureDefn.GetFieldDefn(i);
+                    if (!fieldDefn.GetName().equals("name")) {
+                        outputLayer.CreateField(fieldDefn);
+                    }
+                }
+
+                // 筛选并复制要素
+                sourceLayer.ResetReading();
+                while ((feature = sourceLayer.GetNextFeature()) != null) {
+                    String featureValue = feature.GetFieldAsString(fieldIndex);
+
+                    if (featureValue.equals(value)) {
+                        // 创建新要素并复制几何和属性
+                        Feature newFeature = new Feature(outputLayer.GetLayerDefn());
+                        newFeature.SetGeometry(feature.GetGeometryRef());
+
+                        // 根据字段类型正确复制所有字段值（除name字段外）
+                        for (int i = 0; i < featureDefn.GetFieldCount(); i++) {
+                            FieldDefn fieldDefn = featureDefn.GetFieldDefn(i);
+                            String currentFieldName = fieldDefn.GetName();
+
+                            // 跳过name字段
+                            if (currentFieldName.equals("name")) {
+                                continue;
+                            }
+
+                            // 获取输出图层中对应的字段索引
+                            int outFieldIndex = outputLayer.GetLayerDefn().GetFieldIndex(currentFieldName);
+                            if (outFieldIndex == -1) {
+                                continue; // 如果输出图层中没有该字段，则跳过
+                            }
+
+                            // 处理空值
+                            if (feature.IsFieldNull(i)) {
+                                continue; // 保持为默认值
+                            }
+
+                            // 根据字段类型设置值
+                            int fieldType = fieldDefn.GetFieldType();
+                            switch (fieldType) {
+                                case ogr.OFTInteger:
+                                    newFeature.SetField(outFieldIndex, feature.GetFieldAsInteger(i));
+                                    break;
+                                case ogr.OFTInteger64:
+                                    newFeature.SetField(outFieldIndex, feature.GetFieldAsInteger64(i));
+                                    break;
+                                case ogr.OFTReal:
+                                    newFeature.SetField(outFieldIndex, feature.GetFieldAsDouble(i));
+                                    break;
+                                case ogr.OFTString:
+                                    newFeature.SetField(outFieldIndex, feature.GetFieldAsString(i));
+                                    break;
+                                default:
+                                    // 对于其他类型，使用字符串形式
+                                    newFeature.SetField(outFieldIndex, feature.GetFieldAsString(i));
+                                    break;
+                            }
+                        }
+
+                        // 添加到输出图层
+                        outputLayer.CreateFeature(newFeature);
+                        newFeature.delete();
+                    }
+
+                    feature.delete();
+                }
+
+                // 释放资源
+                outputDs.SyncToDisk();
+                outputDs.delete();
+                System.out.println("已创建拆分文件: " + outputFile);
+            }
+
+            // 释放源数据源
+            sourceDs.delete();
+            return true;
+
+        } catch (Exception e) {
+            System.err.println("拆分 GeoJSON 时出错: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
      * 使用示例
      */
     public static void main(String[] args) {
@@ -585,9 +911,16 @@ public class GdalDatasetUtil {
 //            System.out.println("成功打开文件，大小: " + ds.getRasterXSize() + " x " + ds.getRasterYSize());
 //            closeDataset(ds);
 //        }
-
+        String filePath = "D:\\吉奥\\陕西\\安康";
+        String output = filePath + "\\output";
+        // 确保输出目录存在
+        File outputDir = new File(output);
+        if (!outputDir.exists()) {
+            outputDir.mkdirs();
+        }
+        String cityName = "ankang";
         // 示例2：合并目录中所有TIFF文件
-        Dataset mergedDs = mergeTiffsInDirectory("D:\\吉奥\\商洛\\柞水", "D:\\吉奥\\商洛\\柞水\\output\\merged_output.tiff");
+        Dataset mergedDs = mergeTiffsInDirectory(filePath, filePath + "\\output\\" + cityName + ".tiff");
         if (mergedDs != null) {
             System.out.println("成功合并目录中的TIFF文件，大小: " +
                     mergedDs.getRasterXSize() + " x " + mergedDs.getRasterYSize());
@@ -595,8 +928,8 @@ public class GdalDatasetUtil {
         }
 
         // 示例3：重投影到Web墨卡托
-        String inputFile = "D:\\吉奥\\商洛\\柞水\\output\\merged_output.tiff";
-        String outputFile = "D:\\吉奥\\商洛\\柞水\\output\\merged_output2.tiff";
+        String inputFile = filePath + "\\output\\" +cityName + ".tiff";
+        String outputFile = filePath + "\\output\\" +cityName + "3857.tiff";
         Dataset reprojectedDs = reprojectTo3857(inputFile, outputFile);
         if (reprojectedDs != null) {
             System.out.println("成功重投影文件，大小: " +

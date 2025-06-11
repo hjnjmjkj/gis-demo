@@ -38,6 +38,7 @@ public class TerrainGeoJSONExporter {
         gdal.AllRegister();
         ogr.RegisterAll();
         gdal.SetConfigOption("OGR_GEOMETRY_WKT_FORMATTER", "AXIS_AUTHORITY");
+        gdal.SetConfigOption("OGR_GEOJSON_MAX_OBJ_SIZE", "500");
 
         try {
             // 1. 计算坡度
@@ -121,6 +122,11 @@ public class TerrainGeoJSONExporter {
             FieldDefn areaField = new FieldDefn("area", ogr.OFTReal);
             layer.CreateField(areaField);
 
+            // 添加地形类型字段
+            FieldDefn typeField = new FieldDefn("terrain_type", ogr.OFTString);
+            typeField.SetWidth(20);
+            layer.CreateField(typeField);
+
             // 5. 使用过滤后的栅格进行矢量化
             gdal.Polygonize(filteredDS.GetRasterBand(1), null, layer, 0, new Vector<>());
 
@@ -131,6 +137,7 @@ public class TerrainGeoJSONExporter {
             demDataset.delete();
             srs.delete();
 
+
             DataSource dataSource2 = ogr.Open(outputGeoJSONPath, 0);
             int i = dataSource2.GetLayerCount();
             System.out.println("GeoJSON图层数量: " + i);
@@ -138,7 +145,7 @@ public class TerrainGeoJSONExporter {
             String jdbcUrl = "jdbc:postgresql://127.0.0.1:5432/postgres";
             String username = "postgres";
             String password = "postgres";
-            String tableName = "test.terrain_polygons";
+            String tableName = "test.xian_polygons";
             boolean success = GdalDatasetUtil.writeLayerToPostGIS(dataSource2.GetLayer(0), jdbcUrl, username, password, tableName, 3857);
             if (success) {
                 System.out.println("地形数据成功写入PostGIS数据库");
@@ -188,13 +195,17 @@ public class TerrainGeoJSONExporter {
         SlopeAnalysis slopeAnalysis = new SlopeAnalysis();
         TerrainGeoJSONExporter exporter = new TerrainGeoJSONExporter(slopeAnalysis);
 
-        String inputAscPath = "D:\\吉奥\\商洛\\柞水\\output\\merged_output2.tiff";
+        String inputAscPath = "D:\\吉奥\\陕西\\咸阳\\output\\xianyang3857.tiff";
 
         // 导出平原区域
         exporter.exportTerrainToGeoJSON(inputAscPath,
-                "D:\\吉奥\\商洛\\柞水\\output\\tiff_plain_terrain.geojson");
+                "D:\\吉奥\\陕西\\咸阳\\output\\xianyang3857.geojson");
+
         // 结束时间
         System.out.println("数据导出完成时间: " + new Date());
+
+        GdalDatasetUtil.addFieldToGeoJSON("D:\\吉奥\\陕西\\咸阳\\output\\xianyang3857.geojson",
+                "code","610400");
 
         // 导出山地区域
         /*exporter.exportTerrainToGeoJSON(inputAscPath,
