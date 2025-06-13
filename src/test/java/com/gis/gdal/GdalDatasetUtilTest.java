@@ -66,4 +66,12 @@ public class GdalDatasetUtilTest {
         }
     }
 
+    @Test
+    public void fillGeoJsonWithElevationStatsTest(){
+        for (String city : citys) {
+            GdalDatasetUtil.fillGeoJsonWithElevationStats("D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\" + city + "3857.json",
+                    "D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\" + city + "3857.tiff","max","min");
+        }
+    }
+
 }

@@ -901,6 +901,75 @@ public class GdalDatasetUtil {
         }
     }
 
+    public static boolean fillGeoJsonWithElevationStats(
+            String geoJsonPath, String tiffPath, String maxField, String minField) {
+        DataSource ds = ogr.Open(geoJsonPath, 1);
+        if (ds == null) {
+            System.err.println("无法打开GeoJSON: " + geoJsonPath);
+            return false;
+        }
+        Layer layer = ds.GetLayer(0);
+
+        // 添加字段
+        if (layer.FindFieldIndex(maxField, 1) == -1)
+            layer.CreateField(new FieldDefn(maxField, ogr.OFTReal));
+        if (layer.FindFieldIndex(minField, 1) == -1)
+            layer.CreateField(new FieldDefn(minField, ogr.OFTReal));
+
+        Dataset tiffDs = gdal.Open(tiffPath, gdalconstConstants.GA_ReadOnly);
+        if (tiffDs == null) {
+            System.err.println("无法打开TIFF: " + tiffPath);
+            ds.delete();
+            return false;
+        }
+        Band band = tiffDs.GetRasterBand(1);
+        double[] geoTransform = tiffDs.GetGeoTransform();
+        int width = tiffDs.getRasterXSize();
+        int height = tiffDs.getRasterYSize();
+
+        layer.ResetReading();
+        Feature feature;
+        int count = 0;
+        while ((feature = layer.GetNextFeature()) != null) {
+            Geometry geom = feature.GetGeometryRef();
+            double[] env = new double[4];
+            geom.GetEnvelope(env); // [minX, maxX, minY, maxY]
+
+            java.util.List<Double> values = new java.util.ArrayList<>();
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    double px = geoTransform[0] + x * geoTransform[1] + y * geoTransform[2];
+                    double py = geoTransform[3] + x * geoTransform[4] + y * geoTransform[5];
+                    if (px < env[0] || px > env[1] || py < env[2] || py > env[3]) continue;
+                    Geometry pt = new Geometry(ogr.wkbPoint);
+                    pt.AddPoint(px, py);
+                    if (geom.Contains(pt)) {
+                        double[] buf = new double[1];
+                        band.ReadRaster(x, y, 1, 1, buf);
+                        double val = buf[0];
+                        if (!Double.isNaN(val)) values.add(val);
+                    }
+                    pt.delete();
+                }
+            }
+            if (!values.isEmpty()) {
+                double max = values.stream().mapToDouble(Double::doubleValue).max().orElse(Double.NaN);
+                double min = values.stream().mapToDouble(Double::doubleValue).min().orElse(Double.NaN);
+                feature.SetField(maxField, max);
+                feature.SetField(minField, min);
+                layer.SetFeature(feature);
+            }
+            feature.delete();
+            count++;
+            if (count % 100 == 0) {
+                System.out.println(geoJsonPath+"已处理 " + count + " 个要素...");
+            }
+        }
+        tiffDs.delete();
+        ds.SyncToDisk();
+        ds.delete();
+        return true;
+    }
     /**
      * 使用示例
      */
