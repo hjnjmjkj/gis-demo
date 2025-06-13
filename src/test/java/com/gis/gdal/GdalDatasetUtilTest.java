@@ -17,7 +17,6 @@ public class GdalDatasetUtilTest {
             "tongchuan",
             "weinan",
             "xian",
-            "shanxi",
             "yanan",
             "yulin"
     };
@@ -58,11 +57,12 @@ public class GdalDatasetUtilTest {
         }
     }
 
+
     @Test
-    public void splitGeoJsonByField(){
+    public void removeFeaturesWithNameZero(){
         for (String city : citys) {
-            GdalDatasetUtil.splitGeoJsonByFieldWithoutName("D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\" + city + "3857.json",
-                    "D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\", city,"name");
+            GdalDatasetUtil.removeFeaturesWithNameZero("D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\"+city+"3857.json");
+            System.out.println(city);
         }
     }
 
@@ -71,6 +71,15 @@ public class GdalDatasetUtilTest {
         for (String city : citys) {
             GdalDatasetUtil.fillGeoJsonWithElevationStats("D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\" + city + "3857.json",
                     "D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\" + city + "3857.tiff","max","min");
+            System.out.println(city);
+        }
+    }
+
+    @Test
+    public void splitGeoJsonByField(){
+        for (String city : citys) {
+            GdalDatasetUtil.splitGeoJsonByFieldWithoutName("D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\" + city + "3857.json",
+                    "D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\", city,"name");
         }
     }
 

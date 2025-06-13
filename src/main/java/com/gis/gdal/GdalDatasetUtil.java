@@ -901,6 +901,32 @@ public class GdalDatasetUtil {
         }
     }
 
+    public static void removeFeaturesWithNameZero(String geoJsonPath) {
+        DataSource ds = ogr.Open(geoJsonPath, 1);
+        if (ds == null) {
+            System.err.println("无法打开GeoJSON: " + geoJsonPath);
+            return;
+        }
+        Layer layer = ds.GetLayer(0);
+        layer.ResetReading();
+        Feature feature;
+        long fid;
+        java.util.List<Long> deleteFids = new java.util.ArrayList<>();
+        while ((feature = layer.GetNextFeature()) != null) {
+            if ("0".equals(feature.GetFieldAsString("name"))) {
+                fid = feature.GetFID();
+                deleteFids.add(fid);
+            }
+            feature.delete();
+        }
+        // 统一删除，避免遍历时修改
+        for (Long id : deleteFids) {
+            layer.DeleteFeature(id);
+        }
+        ds.SyncToDisk();
+        ds.delete();
+    }
+
     public static boolean fillGeoJsonWithElevationStats(
             String geoJsonPath, String tiffPath, String maxField, String minField) {
         DataSource ds = ogr.Open(geoJsonPath, 1);
@@ -931,6 +957,12 @@ public class GdalDatasetUtil {
         Feature feature;
         int count = 0;
         while ((feature = layer.GetNextFeature()) != null) {
+            // 跳过已存在min或max的要素
+            if (feature.IsFieldSetAndNotNull(maxField) && feature.IsFieldSetAndNotNull(minField)) {
+                feature.delete();
+                continue;
+            }
+            // 获取要素几何
             Geometry geom = feature.GetGeometryRef();
             double[] env = new double[4];
             geom.GetEnvelope(env); // [minX, maxX, minY, maxY]
@@ -961,9 +993,7 @@ public class GdalDatasetUtil {
             }
             feature.delete();
             count++;
-            if (count % 100 == 0) {
-                System.out.println(geoJsonPath+"已处理 " + count + " 个要素...");
-            }
+            System.out.println(geoJsonPath+"已处理 " + count + " 个要素...");
         }
         tiffDs.delete();
         ds.SyncToDisk();
