@@ -18,7 +18,7 @@ import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.process.ProcessException;
 import org.geotools.process.raster.PolygonExtractionProcess;
 import org.geotools.referencing.CRS;
-import org.geotools.util.factory.Hints;
+//import org.geotools.util.factory.Hints;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.geom.Polygon;

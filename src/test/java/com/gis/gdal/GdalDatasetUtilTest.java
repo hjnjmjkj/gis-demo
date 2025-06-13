@@ -37,6 +37,18 @@ public class GdalDatasetUtilTest {
     }};
 
     @Test
+    public void terrainGeoJSONExporterTest(){
+        SlopeAnalysis slopeAnalysis = new SlopeAnalysis();
+        TerrainGeoJSONExporter exporter = new TerrainGeoJSONExporter(slopeAnalysis);
+        String path = "D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\";
+        for (String city : citys) {
+            // 导出平原区域
+            exporter.exportTerrainToGeoJSON(path +city +"3857.tiff",
+                    path + "geojson\\" + city + "3857.json");
+        }
+    }
+
+    @Test
     public void addFieldToGeoJSON() {
         String path = "D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\";
         for (Map.Entry<String, String> stringStringEntry : CITY_CODE_MAP.entrySet()) {
@@ -54,15 +66,4 @@ public class GdalDatasetUtilTest {
         }
     }
 
-    @Test
-    public void terrainGeoJSONExporterTest(){
-        SlopeAnalysis slopeAnalysis = new SlopeAnalysis();
-        TerrainGeoJSONExporter exporter = new TerrainGeoJSONExporter(slopeAnalysis);
-        String path = "D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\";
-        for (String city : citys) {
-            // 导出平原区域
-            exporter.exportTerrainToGeoJSON(path +city +"3857.tiff",
-                    path + "geojson\\" + city + "3857.json");
-        }
-    }
 }
