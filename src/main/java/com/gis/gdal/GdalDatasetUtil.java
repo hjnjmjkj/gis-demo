@@ -1000,6 +1000,34 @@ public class GdalDatasetUtil {
         ds.delete();
         return true;
     }
+
+    public static void printFeatureOfGeoJson(String geoJsonPath) {
+        DataSource ds = ogr.Open(geoJsonPath, 0); // 只读模式
+        if (ds == null) {
+            System.err.println("无法打开GeoJSON: " + geoJsonPath);
+            return;
+        }
+        int layerCount = ds.GetLayerCount();
+        for (int i = 0; i < layerCount; i++) {
+            Layer layer = ds.GetLayer(i);
+            System.out.println("图层 " + i + " 名称: " + layer.GetName());
+            layer.ResetReading();
+            Feature feature;
+            while ((feature = layer.GetNextFeature()) != null) {
+                if (feature != null) {
+                    System.out.println("几何：");
+                    Geometry geom = feature.GetGeometryRef();
+                    if (geom != null) {
+                        System.out.println(geom.ExportToJson());
+                    }
+                    feature.delete();
+                } else {
+                    System.out.println("该图层没有要素。");
+                }
+            }
+        }
+        ds.delete();
+    }
     /**
      * 使用示例
      */

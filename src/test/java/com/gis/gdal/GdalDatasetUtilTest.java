@@ -9,7 +9,7 @@ import java.util.Map;
 public class GdalDatasetUtilTest {
     //初始化一个list里面保护xianyang、xian、shanxi
     public static final String[] citys = {
-            "ankang",
+            /*"ankang",*/
             "baoji",
             "hanzhong",
             "xianyang",
@@ -81,6 +81,11 @@ public class GdalDatasetUtilTest {
             GdalDatasetUtil.splitGeoJsonByFieldWithoutName("D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\" + city + "3857.json",
                     "D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\", city,"name");
         }
+    }
+
+    @Test
+    public void printFirstFeatureOfGeoJson(){
+        GdalDatasetUtil.printFeatureOfGeoJson("D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\baoji3857.json");
     }
 
 }
