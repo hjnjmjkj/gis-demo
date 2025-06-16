@@ -964,6 +964,7 @@ public class GdalDatasetUtil {
             }
             // 获取要素几何
             Geometry geom = feature.GetGeometryRef();
+            geom = geom.Buffer(0);// 确保几何是有效的
             double[] env = new double[4];
             geom.GetEnvelope(env); // [minX, maxX, minY, maxY]
 

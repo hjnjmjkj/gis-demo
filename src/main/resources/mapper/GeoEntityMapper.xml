@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.gis.mapper.GeoEntityMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.gis.entity.GeoEntity">
+        <id column="id" property="id" />
+        <result column="name" property="name" />
+        <result column="description" property="description" />
+        <result column="geometry" property="geometry" typeHandler="com.gis.handler.GeometryTypeHandler" />
+        <result column="create_time" property="createTime" />
+        <result column="update_time" property="updateTime" />
+    </resultMap>
+
+    <!-- 可以添加自定义的空间查询 SQL -->
+    <select id="findWithinDistance" resultMap="BaseResultMap">
+        SELECT * FROM geo_entity 
+        WHERE ST_DWithin(
+            geometry, 
+            ST_SetSRID(ST_MakePoint(#{longitude}, #{latitude}), 4326), 
+            #{distanceMeters}
+        )
+    </select>
+
+    <select id="getSummaryStats" resultType="com.gis.entity.SummaryStats">
+        SELECT
+        AVG((stats).mean)   AS mean,
+        AVG((stats).min)    AS min,
+        AVG((stats).max)    AS max,
+        AVG((stats).stddev) AS stddev
+        FROM (
+        SELECT ST_SummaryStats(
+        ST_Clip(rast, 1, st_setsrid(st_geomfromgeojson(#{geojson}),3857), TRUE),
+        TRUE
+        ) AS stats
+        FROM test.shanxi3857
+        WHERE ST_Intersects(rast, st_setsrid(st_geomfromgeojson(#{geojson}),3857))
+        ) AS agg_stats;
+    </select>
+</mapper>

@@ -138,7 +138,7 @@ public class TerrainGeoJSONExporter {
             srs.delete();
 
 
-            DataSource dataSource2 = ogr.Open(outputGeoJSONPath, 0);
+            /*DataSource dataSource2 = ogr.Open(outputGeoJSONPath, 0);
             int i = dataSource2.GetLayerCount();
             System.out.println("GeoJSON图层数量: " + i);
             // 写入数据库
@@ -151,7 +151,7 @@ public class TerrainGeoJSONExporter {
                 System.out.println("地形数据成功写入PostGIS数据库");
             } else {
                 System.err.println("地形数据写入PostGIS数据库失败");
-            }
+            }*/
 
             System.out.println("类型地形到: " + outputGeoJSONPath);
             return true;

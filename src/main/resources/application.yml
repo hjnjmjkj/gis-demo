@@ -1,26 +1,20 @@
-# 服务器配置
-server:
-  port: 8888
-
-# 应用名称
 spring:
-  application:
-    name: gis-hangar-placement
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://172.27.234.162:5432/postgres?useSSL=false
+    username: postgres
+    password: postgres
+    hikari:
+      connection-timeout: 30000
+      maximum-pool-size: 10
 
-# 日志配置
-logging:
-  level:
-    com.gis: INFO
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
-
-
-springdoc:
-  api-docs:
-    path: /v3/api-docs
-  swagger-ui:
-    path: /swagger-ui.html
-    operationsSorter: method
-    disable-swagger-default-url: true
-  cache:
-    disabled: true
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.gis.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+  global-config:
+    db-config:
+      id-type: auto
+      table-underline: true

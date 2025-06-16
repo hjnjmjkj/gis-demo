@@ -1,15 +1,26 @@
 package com.gis.gdal;
 
 
+import com.gis.mapper.GeoEntityMapper;
+import com.gis.service.GeoService;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.junit4.SpringRunner;
 
+import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.Map;
 
+@RunWith(SpringRunner.class)
+@SpringBootTest
 public class GdalDatasetUtilTest {
+    @Resource
+    private GeoService geoService;
+
     //初始化一个list里面保护xianyang、xian、shanxi
     public static final String[] citys = {
-            /*"ankang",*/
+            "ankang",
             "baoji",
             "hanzhong",
             "xianyang",
@@ -35,6 +46,9 @@ public class GdalDatasetUtilTest {
         put("yulin", "610800");     // 榆林市
     }};
 
+    /**
+     * 向量化
+     */
     @Test
     public void terrainGeoJSONExporterTest(){
         SlopeAnalysis slopeAnalysis = new SlopeAnalysis();
@@ -47,6 +61,9 @@ public class GdalDatasetUtilTest {
         }
     }
 
+    /**
+     * 添加区域编码
+     */
     @Test
     public void addFieldToGeoJSON() {
         String path = "D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\";
@@ -57,7 +74,9 @@ public class GdalDatasetUtilTest {
         }
     }
 
-
+    /**
+     * 删除name为0的要素
+     */
     @Test
     public void removeFeaturesWithNameZero(){
         for (String city : citys) {
@@ -69,8 +88,7 @@ public class GdalDatasetUtilTest {
     @Test
     public void fillGeoJsonWithElevationStatsTest(){
         for (String city : citys) {
-            GdalDatasetUtil.fillGeoJsonWithElevationStats("D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\" + city + "3857.json",
-                    "D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\" + city + "3857.tiff","max","min");
+            geoService.fillGeoJsonWithElevationStats("D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\" + city + "3857.json");
             System.out.println(city);
         }
     }
@@ -84,7 +102,7 @@ public class GdalDatasetUtilTest {
     }
 
     @Test
-    public void printFirstFeatureOfGeoJson(){
+    public void printFeatureOfGeoJson(){
         GdalDatasetUtil.printFeatureOfGeoJson("D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\baoji3857.json");
     }
 
