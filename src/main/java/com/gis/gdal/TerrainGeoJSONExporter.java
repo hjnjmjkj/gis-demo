@@ -100,7 +100,7 @@ public class TerrainGeoJSONExporter {
             // 使用SieveFilter合并小于阈值的连通区域
             // 参数含义: 源波段, 掩码波段(null), 目标波段, 阈值(像素数), 连通性(4或8), 选项
             gdal.SieveFilter(classifiedDS.GetRasterBand(1), null, filteredDS.GetRasterBand(1),
-                    20, // 阈值：小于1个像素的区域将被合并
+                    30, // 阈值：小于1个像素的区域将被合并
                     4, // 8-连通性
                     null); // 没有额外选项
 

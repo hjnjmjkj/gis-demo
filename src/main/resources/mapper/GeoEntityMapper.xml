@@ -24,13 +24,13 @@
 
     <select id="getSummaryStats" resultType="com.gis.entity.SummaryStats">
         SELECT
-        AVG((stats).mean)   AS mean,
-        AVG((stats).min)    AS min,
-        AVG((stats).max)    AS max,
-        AVG((stats).stddev) AS stddev
+        (stats).mean  AS mean,
+        (stats).min  AS min,
+        (stats).max    AS max,
+        (stats).stddev AS stddev
         FROM (
         SELECT ST_SummaryStats(
-        ST_Clip(rast, 1, st_setsrid(st_geomfromgeojson(#{geojson}),3857), TRUE),
+        ST_Union(ST_Clip(rast, 1, st_setsrid(st_geomfromgeojson(#{geojson}),3857), TRUE)),
         TRUE
         ) AS stats
         FROM test.shanxi3857
