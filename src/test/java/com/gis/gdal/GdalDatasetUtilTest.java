@@ -85,12 +85,27 @@ public class GdalDatasetUtilTest {
         }
     }
 
+    /**
+     * 计算最大值最小值
+     */
     @Test
     public void fillGeoJsonWithElevationStatsTest(){
         for (String city : citys) {
             geoService.fillGeoJsonWithElevationStats("D:\\吉奥\\陕西\\out\\陕西地形tiff3857\\geojson\\" + city + "3857.json");
             System.out.println(city);
         }
+    }
+
+    /**
+     * 洼地geojson处理
+     */
+    @Test
+    public void fillShanxiGeoJsonWithElevationStatsTest(){
+        geoService.fillGeoJsonWithElevationStats("D:\\吉奥\\陕西\\input\\平滑处理\\shanxi3857_90_simplified.json");
+        GdalDatasetUtil.addFieldToGeoJSON("D:\\吉奥\\陕西\\input\\平滑处理\\shanxi3857_90_simplified.json","areacode", "610000");
+        GdalDatasetUtil.removePropertiesFromGeoJSON("D:\\吉奥\\陕西\\input\\平滑处理\\shanxi3857_90_simplified.json",
+                "D:\\吉奥\\陕西\\input\\平滑处理\\shanxi3857_90_simplified2.json",
+                new String[]{"area_km2","id"});
     }
 
     @Test

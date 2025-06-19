@@ -1065,4 +1065,63 @@ public class GdalDatasetUtil {
             closeDataset(reprojectedDs);
         }
     }
+
+    public static boolean removePropertiesFromGeoJSON(String sourceGeoJson, String targetGeoJson, String[] propertiesToRemove) {
+        try {
+            ogr.RegisterAll();
+            DataSource srcDS = ogr.Open(sourceGeoJson, 0);
+            if (srcDS == null) {
+                System.err.println("无法打开GeoJSON: " + sourceGeoJson);
+                return false;
+            }
+            Layer srcLayer = srcDS.GetLayer(0);
+            FeatureDefn srcDefn = srcLayer.GetLayerDefn();
+            Set<String> removeSet = new HashSet<>(Arrays.asList(propertiesToRemove));
+
+            // 创建目标数据源
+            Driver driver = ogr.GetDriverByName("GeoJSON");
+            if (new File(targetGeoJson).exists()) {
+                driver.DeleteDataSource(targetGeoJson);
+            }
+            DataSource dstDS = driver.CreateDataSource(targetGeoJson);
+            Layer dstLayer = dstDS.CreateLayer(srcLayer.GetName(), srcLayer.GetSpatialRef(), srcLayer.GetGeomType(), new Vector<>());
+
+            // 复制除去要删除字段的字段定义
+            for (int i = 0; i < srcDefn.GetFieldCount(); i++) {
+                FieldDefn field = srcDefn.GetFieldDefn(i);
+                if (!removeSet.contains(field.GetName())) {
+                    dstLayer.CreateField(field);
+                }
+            }
+
+            // 复制要素
+            srcLayer.ResetReading();
+            Feature feature;
+            while ((feature = srcLayer.GetNextFeature()) != null) {
+                Feature newFeature = new Feature(dstLayer.GetLayerDefn());
+                newFeature.SetGeometry(feature.GetGeometryRef());
+                for (int i = 0; i < srcDefn.GetFieldCount(); i++) {
+                    String fieldName = srcDefn.GetFieldDefn(i).GetName();
+                    if (!removeSet.contains(fieldName)) {
+                        int dstIdx = dstLayer.GetLayerDefn().GetFieldIndex(fieldName);
+                        if (dstIdx != -1 && !feature.IsFieldNull(i)) {
+                            newFeature.SetField(dstIdx, feature.GetFieldAsString(i));
+                        }
+                    }
+                }
+                dstLayer.CreateFeature(newFeature);
+                newFeature.delete();
+                feature.delete();
+            }
+            dstDS.SyncToDisk();
+            dstDS.delete();
+            srcDS.delete();
+            System.out.println("已生成去除指定属性的新GeoJSON: " + targetGeoJson);
+            return true;
+        } catch (Exception e) {
+            System.err.println("处理GeoJSON时出错: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
 }

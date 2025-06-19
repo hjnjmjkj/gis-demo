@@ -216,13 +216,98 @@ public class DepressionPolygonExtractor {
         return true;
     }
 
+    /**
+     * 读取一个GeoJSON文件，对其所有要素进行简化，然后保存到新的GeoJSON文件。
+     * @param inputGeoJSONPath 输入的GeoJSON文件路径
+     * @param outputGeoJSONPath 输出的简化后的GeoJSON文件路径
+     * @param tolerance 简化容差。单位与输入文件的坐标系单位一致（例如，米）。
+     */
+    public void simplifyGeoJSON(String inputGeoJSONPath, String outputGeoJSONPath, double tolerance) {
+        gdal.AllRegister();
+        ogr.RegisterAll();
+
+        System.out.println("\n开始简化GeoJSON: " + inputGeoJSONPath);
+        System.out.println("简化容差: " + tolerance);
+
+        // 打开输入数据源
+        DataSource inDS = ogr.Open(inputGeoJSONPath, false);
+        if (inDS == null) {
+            System.err.println("无法打开输入的GeoJSON文件: " + inputGeoJSONPath);
+            return;
+        }
+        Layer inLayer = inDS.GetLayer(0);
+
+        // 创建输出数据源
+        Driver driver = ogr.GetDriverByName("GeoJSON");
+        if (new java.io.File(outputGeoJSONPath).exists()) {
+            driver.DeleteDataSource(outputGeoJSONPath);
+        }
+        DataSource outDS = driver.CreateDataSource(outputGeoJSONPath);
+        Layer outLayer = outDS.CreateLayer(inLayer.GetName(), inLayer.GetSpatialRef(), inLayer.GetGeomType());
+
+        // 复制字段定义
+        FeatureDefn inLayerDefn = inLayer.GetLayerDefn();
+        for (int i = 0; i < inLayerDefn.GetFieldCount(); i++) {
+            outLayer.CreateField(inLayerDefn.GetFieldDefn(i));
+        }
+
+        // 遍历要素，简化并写入
+        inLayer.ResetReading();
+        Feature inFeature;
+        while ((inFeature = inLayer.GetNextFeature()) != null) {
+            Geometry inGeom = inFeature.GetGeometryRef();
+            if (inGeom == null) {
+                inFeature.delete();
+                continue;
+            }
+
+            // 简化几何图形
+            Geometry outGeom = inGeom.Simplify(tolerance);
+            if (outGeom == null || outGeom.IsEmpty()) {
+                outGeom = inGeom.Clone(); // 保留原始几何
+            }
+
+            // 创建新要素并设置几何和属性
+            Feature outFeature = new Feature(outLayer.GetLayerDefn());
+
+            // 使用SetFrom方法复制所有属性
+            outFeature.SetFrom(inFeature);
+
+            // 用简化后的几何图形覆盖
+            outFeature.SetGeometry(outGeom);
+
+            // 写入新要素
+            outLayer.CreateFeature(outFeature);
+
+            // 释放资源
+            if (outGeom != null) outGeom.delete();
+            outFeature.delete();
+            inFeature.delete();
+        }
+
+        System.out.println("简化完成，结果已保存到: " + outputGeoJSONPath);
+
+        // 清理
+        inDS.delete();
+        outDS.delete();
+    }
+
     public static void main(String[] args) {
         DepressionPolygonExtractor extractor = new DepressionPolygonExtractor(
-                10.0, // 每次抬高10米
-                50,    // 迭代5次
+                5.0, // 每次抬高5米
+                200,    // 迭代200次
                 1.0,  // 最小面积1km²
                 10.0  // 最大面积10km²
         );
-        extractor.extract("D:\\吉奥\\陕西\\input\\shanxi3857.tiff", "D:\\吉奥\\陕西\\input\\shanxi3857_depression.geojson");
+
+        String rawOutputPath = "D:\\吉奥\\陕西\\input\\平滑处理\\shanxi3857.json";
+        String simplifiedOutputPath = "D:\\吉奥\\陕西\\input\\平滑处理\\shanxi3857_90_simplified.json";
+
+        // 步骤1: 提取原始洼地多边形
+        //boolean success = extractor.extract("D:\\吉奥\\陕西\\input\\shanxi3857.tiff", rawOutputPath);
+
+        // 步骤2: 如果提取成功，则对结果进行简化
+        double tolerance = 90; // 简化容差，单位为米。您可以根据需要调整此值。
+        extractor.simplifyGeoJSON(rawOutputPath, simplifiedOutputPath, tolerance);
     }
 }
