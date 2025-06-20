@@ -8,6 +8,7 @@ import org.gdal.gdalconst.gdalconstConstants;
 import java.util.Arrays;
 
 public class DepressionAnalysis {
+    public static int noDataValue = 0; // 假设NoData值为
 
     /**
      * 根据统计数据自动确定洼地阈值
@@ -84,9 +85,9 @@ public class DepressionAnalysis {
         double[] buffer = new double[width * height];
         band.ReadRaster(0, 0, width, height, buffer);
 
-        // 过滤掉NoData值(假设NoData为-9999)
+        // 过滤掉NoData值(假设NoData为noDataValue)
         double[] validValues = Arrays.stream(buffer)
-                .filter(val -> val > -9990)  // 假设NoData值为-9999
+                .filter(val -> val > noDataValue)  // 假设NoData值为noDataValue
                 .sorted()
                 .toArray();
 
@@ -116,7 +117,7 @@ public class DepressionAnalysis {
             band.ReadRaster(0, y, width, 1, buffer);
             for (int x = 0; x < width; x++) {
                 // 如果高程低于阈值，标记为洼地
-                if (buffer[x] != -9999 && buffer[x] < threshold) {
+                if (buffer[x] != noDataValue && buffer[x] < threshold) {
                     depressions[y][x] = 1;
                 } else {
                     depressions[y][x] = 0;
