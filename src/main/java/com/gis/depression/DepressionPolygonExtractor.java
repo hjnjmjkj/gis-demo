@@ -15,12 +15,18 @@ public class DepressionPolygonExtractor {
     private final int maxIterations;    // 迭代次数
     private final double minArea;       // 最小面积（km²）
     private final double maxArea;       // 最大面积（km²）
+    private final Short noDataValue;   // 无数据值，可为null表示自动从栅格获取
 
     public DepressionPolygonExtractor(double elevationStep, int maxIterations, double minArea, double maxArea) {
+        this(elevationStep, maxIterations, minArea, maxArea, null);
+    }
+
+    public DepressionPolygonExtractor(double elevationStep, int maxIterations, double minArea, double maxArea, Short noDataValue) {
         this.elevationStep = elevationStep;
         this.maxIterations = maxIterations;
         this.minArea = minArea;
         this.maxArea = maxArea;
+        this.noDataValue = noDataValue;
     }
 
     public boolean extract(String inputAscPath, String outputGeoJSONPath) {
@@ -39,33 +45,66 @@ public class DepressionPolygonExtractor {
         System.out.println("栅格尺寸: " + width + "x" + height);
 
         Band band = demDataset.GetRasterBand(1);
-        double[] elevationData = new double[width * height];
-        band.ReadRaster(0, 0, width, height, width, height, gdalconstConstants.GDT_Float64, elevationData);
+
+        // 使用正确的数据类型读取栅格
+        short[] shortElevationData = new short[width * height];
+        try {
+            band.ReadRaster(0, 0, width, height, width, height, gdalconstConstants.GDT_Int16, shortElevationData);
+        } catch (Exception e) {
+            System.err.println("读取栅格数据失败: " + e.getMessage());
+            demDataset.delete();
+            return false;
+        }
+
+        // 将short数据转换为double以便后续处理
+        short[] elevationData = new short[width * height];
+        for (int i = 0; i < shortElevationData.length; i++) {
+            elevationData[i] = shortElevationData[i];
+        }
+
+        // 释放short数组以节省内存
+        shortElevationData = null;
+        System.gc(); // 建议垃圾回收
+
+        // 确定NoData值 - 使用类属性或从栅格获取
+        short actualNoDataValue;
+        if (this.noDataValue != null) {
+            // 使用用户提供的无数据值
+            actualNoDataValue = this.noDataValue;
+            System.out.println("使用用户指定的无数据值: " + actualNoDataValue);
+        } else {
+            // 从栅格获取无数据值
+            Double[] noDataValueArr = new Double[1];
+            band.GetNoDataValue(noDataValueArr);
+            // Int16数据类型通常使用-32768作为NoData值
+            actualNoDataValue = (noDataValueArr[0] != null) ?Short.parseShort(noDataValueArr[0]+""): (short)-9999;
+            System.out.println("从栅格获取的无数据值: " + actualNoDataValue);
+        }
 
         // 计算全局最小高程，并处理NoData值
-        Double[] noDataValueArr = new Double[1];
-        band.GetNoDataValue(noDataValueArr);
-        double noDataValue = (noDataValueArr[0] != null) ? noDataValueArr[0] : Double.NEGATIVE_INFINITY;
-
-        double minElevation = Double.MAX_VALUE;
-        for (double elev : elevationData) {
-            if (elev != noDataValue) {
+        Integer minElevation = Integer.MAX_VALUE;
+        Integer maxElevation = Integer.MIN_VALUE;
+        for (short elev : elevationData) {
+            if (elev != actualNoDataValue) {
                 minElevation = Math.min(minElevation, elev);
+                maxElevation = Math.max(maxElevation, elev);
             }
         }
 
-        if (minElevation == Double.MAX_VALUE) {
+        if (minElevation == Integer.MAX_VALUE) {
             System.err.println("错误: 未能在栅格中找到任何有效的高程数据。");
             demDataset.delete();
             return false;
         }
         System.out.println("计算出的最小高程: " + minElevation);
-
+        System.out.println("计算出的最大高程: " + maxElevation);
+        System.out.println("高程范围: " + (maxElevation - minElevation) + " 米");
 
         // 结果多边形集合
         List<Geometry> lastPolygons = new ArrayList<>();
 
         org.gdal.gdal.Driver memDriver = gdal.GetDriverByName("MEM");
+
 
         for (int iter = 0; iter < maxIterations; iter++) {
             double threshold = minElevation + elevationStep * (iter + 1);
@@ -75,7 +114,7 @@ public class DepressionPolygonExtractor {
             byte[] mask = new byte[width * height];
             int validCells = 0;
             for (int i = 0; i < elevationData.length; i++) {
-                if (elevationData[i] != noDataValue && elevationData[i] <= threshold) {
+                if (elevationData[i] != actualNoDataValue && elevationData[i] <= threshold) {
                     mask[i] = 1;
                     validCells++;
                 } else {
@@ -85,6 +124,11 @@ public class DepressionPolygonExtractor {
             System.out.println("阈值内的有效像元数: " + validCells);
             if (validCells == 0) {
                 System.out.println("当前迭代没有有效像元，跳过。");
+                continue;
+            }
+
+            if (validCells == width * height) {
+                System.out.println("所有像元都在阈值内，结果可能无意义，跳过。");
                 continue;
             }
 
@@ -112,8 +156,17 @@ public class DepressionPolygonExtractor {
             int dnFieldIndex = layer.FindFieldIndex("DN", 1);
 
             // 矢量化时用字段索引，并使用掩膜
-            gdal.Polygonize(maskDS.GetRasterBand(1), maskDS.GetRasterBand(1), layer, dnFieldIndex, new Vector<>());
-            System.out.println("矢量化完成，生成了 " + layer.GetFeatureCount() + " 个要素。");
+            try {
+                gdal.Polygonize(maskDS.GetRasterBand(1), maskDS.GetRasterBand(1), layer, dnFieldIndex, new Vector<>());
+                System.out.println("矢量化完成，生成了 " + layer.GetFeatureCount() + " 个要素。");
+            } catch (Exception e) {
+                System.err.println("矢量化失败: " + e.getMessage());
+                maskDS.delete();
+                layer.delete();
+                memDS.delete();
+                srs.delete();
+                continue;
+            }
 
             // 筛选面积并修复几何图形
             List<Geometry> validPolygons = new ArrayList<>();
@@ -134,7 +187,7 @@ public class DepressionPolygonExtractor {
                 }
 
                 double area = fixedGeom.GetArea() / 1_000_000.0; // 面积单位为平方米，转换为平方公里
-                if (area >= minArea && area <= maxArea) {
+                if (Math.abs(area - minArea) < 1e-6 || Math.abs(area - maxArea) < 1e-6 || (area > minArea && area < maxArea)) {
                     validPolygons.add(fixedGeom); // Buffer(0)返回新对象，直接添加
                 } else {
                     fixedGeom.delete(); // 如果不添加，则删除新创建的对象
@@ -165,6 +218,7 @@ public class DepressionPolygonExtractor {
             }
             lastPolygons.addAll(validPolygons);
             System.out.println("当前总洼地数: " + lastPolygons.size());
+            System.out.println("时间:" + new Date());
 
             // 释放
             maskDS.delete();
@@ -293,21 +347,32 @@ public class DepressionPolygonExtractor {
     }
 
     public static void main(String[] args) {
+        // 使用默认构造函数（无数据值自动从栅格获取）
         DepressionPolygonExtractor extractor = new DepressionPolygonExtractor(
-                5.0, // 每次抬高5米
-                200,    // 迭代200次
-                1.0,  // 最小面积1km²
-                10.0  // 最大面积10km²
+                2.0, // 每次抬高5米
+                500, // 迭代200次
+                1.0, // 最小面积1km²
+                20.0, // 最大面积10km²
+                (short) 0 // 指定Int16类型的常用NoData值
         );
 
-        String rawOutputPath = "D:\\吉奥\\陕西\\input\\平滑处理\\shanxi3857.json";
-        String simplifiedOutputPath = "D:\\吉奥\\陕西\\input\\平滑处理\\shanxi3857_90_simplified.json";
+        // 或者指定无数据值的构造函数
+        // DepressionPolygonExtractor extractor = new DepressionPolygonExtractor(
+        //         5.0,           // 每次抬高5米
+        //         200,           // 迭代200次
+        //         1.0,           // 最小面积1km²
+        //         10.0,          // 最大面积10km²
+        //         -9999.0        // 指定无数据值为-9999.0
+        // );
+
+        String rawOutputPath = "D:\\吉奥\\陕西\\input\\30米经度\\dem3857_2_250.json";
+        String simplifiedOutputPath = "D:\\吉奥\\陕西\\input\\30米经度\\dem3857_30_simplified_2_250.json";
 
         // 步骤1: 提取原始洼地多边形
-        //boolean success = extractor.extract("D:\\吉奥\\陕西\\input\\shanxi3857.tiff", rawOutputPath);
+        boolean success = extractor.extract("D:\\吉奥\\陕西\\input\\30米经度\\dem3857.tif", rawOutputPath);
 
         // 步骤2: 如果提取成功，则对结果进行简化
-        double tolerance = 90; // 简化容差，单位为米。您可以根据需要调整此值。
+        double tolerance = 30; // 简化容差，单位为米。您可以根据需要调整此值。
         extractor.simplifyGeoJSON(rawOutputPath, simplifiedOutputPath, tolerance);
     }
 }
